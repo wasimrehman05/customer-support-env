@@ -19,9 +19,6 @@ build/
 dist/
 *.egg-info/
 
-# uv lock (generated)
-uv.lock
-
 # Hackathon internal docs (not for public repo)
 HACKATHON_REQUIREMENTS.md
 
