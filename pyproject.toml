@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "customer-support-env"
+version = "0.1.0"
+description = "Customer Support Resolution Environment for OpenEnv - AI agent resolves support tickets by searching knowledge base, asking clarifying questions, and providing solutions."
+requires-python = ">=3.10"
+dependencies = [
+    "openenv-core[core]>=0.2.1",
+    "fastapi>=0.100.0",
+    "pydantic>=2.0.0",
+    "uvicorn>=0.20.0",
+]
+
+[project.scripts]
+server = "customer_support_env.server.app:main"

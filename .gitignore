@@ -1,0 +1,30 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# uv lock (generated)
+uv.lock
+
+# Hackathon internal docs (not for public repo)
+HACKATHON_REQUIREMENTS.md
+
+# Claude / agent state
+.claude/
+memory/
