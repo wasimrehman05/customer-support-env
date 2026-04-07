@@ -19,9 +19,3 @@ build/
 dist/
 *.egg-info/
 
-# Hackathon internal docs (not for public repo)
-HACKATHON_REQUIREMENTS.md
-
-# Claude / agent state
-.claude/
-memory/
