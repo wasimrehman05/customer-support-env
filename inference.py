@@ -6,7 +6,7 @@ Runs an LLM agent against the Customer Support environment for all 3 tasks.
 MANDATORY ENV VARS:
     API_BASE_URL   The API endpoint for the LLM.
     MODEL_NAME     The model identifier to use for inference.
-    HF_TOKEN       Your Hugging Face / API key.
+    API_KEY        API key for the LLM proxy (fallback: HF_TOKEN).
     IMAGE_NAME     Docker image name (if using from_docker_image).
 
 STDOUT FORMAT:
@@ -32,9 +32,9 @@ from customer_support_env.server.graders import grade_episode
 from customer_support_env.server.tickets import TICKETS
 
 # ---- Configuration ----
-API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY") or ""
-API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
-MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
+API_KEY = os.getenv("API_KEY") or os.getenv("HF_TOKEN") or ""
+API_BASE_URL = os.environ.get("API_BASE_URL", "https://router.huggingface.co/v1")
+MODEL_NAME = os.environ.get("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
 IMAGE_NAME = os.getenv("IMAGE_NAME", "")
 BENCHMARK = "customer_support_env"
 
