@@ -31,12 +31,14 @@ from customer_support_env import CustomerSupportEnv, SupportAction
 from customer_support_env.server.graders import grade_episode
 from customer_support_env.server.tickets import TICKETS
 
-# ---- Configuration ----
+# ---- Configuration (matches validator requirements exactly) ----
 IMAGE_NAME = os.getenv("IMAGE_NAME")
-API_KEY = os.getenv("API_KEY") or os.getenv("HF_TOKEN")
 
-API_BASE_URL = os.getenv("API_BASE_URL") or "https://router.huggingface.co/v1"
-MODEL_NAME = os.getenv("MODEL_NAME") or "Qwen/Qwen2.5-72B-Instruct"
+# Validator injects API_BASE_URL and API_KEY — use them directly
+API_BASE_URL = os.environ.get("API_BASE_URL", "https://router.huggingface.co/v1")
+MODEL_NAME = os.environ.get("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
+API_KEY = os.environ.get("API_KEY", os.environ.get("HF_TOKEN", ""))
+
 BENCHMARK = "customer_support_env"
 
 MAX_TOKENS = 400
@@ -223,11 +225,9 @@ def get_agent_action(
 
         return action
     except Exception as exc:
+        # Do NOT silently swallow — re-raise so the validator sees the failure
         print(f"[DEBUG] Model request failed: {exc}", flush=True)
-        return SupportAction(
-            action_type="send_response",
-            content="I apologize for the difficulty. Let me connect you with a specialist.",
-        )
+        raise
 
 
 # ---- Main loop ----
