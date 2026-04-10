@@ -7,7 +7,7 @@ MANDATORY ENV VARS:
     API_BASE_URL   The API endpoint for the LLM.
     MODEL_NAME     The model identifier to use for inference.
     HF_TOKEN       Your Hugging Face / API key.
-    LOCAL_IMAGE_NAME  Docker image name (if using from_docker_image).
+    IMAGE_NAME     Docker image name (if using from_docker_image).
 
 STDOUT FORMAT:
     [START] task=<task_name> env=<benchmark> model=<model_name>
@@ -32,13 +32,11 @@ from customer_support_env.server.graders import grade_episode
 from customer_support_env.server.tickets import TICKETS
 
 # ---- Configuration ----
-API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
-MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
-HF_TOKEN = os.getenv("HF_TOKEN")
-LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
+IMAGE_NAME = os.getenv("IMAGE_NAME")
+API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
 
-# Accept API_KEY from validator proxy, fall back to HF_TOKEN
-API_KEY = os.getenv("API_KEY") or HF_TOKEN or ""
+API_BASE_URL = os.getenv("API_BASE_URL") or "https://router.huggingface.co/v1"
+MODEL_NAME = os.getenv("MODEL_NAME") or "Qwen/Qwen2.5-72B-Instruct"
 BENCHMARK = "customer_support_env"
 
 MAX_TOKENS = 400
@@ -245,8 +243,8 @@ async def run_task(
 
     try:
         # Connect to environment
-        if LOCAL_IMAGE_NAME:
-            env = await CustomerSupportEnv.from_docker_image(LOCAL_IMAGE_NAME)
+        if IMAGE_NAME:
+            env = await CustomerSupportEnv.from_docker_image(IMAGE_NAME)
         else:
             # Run environment in-process for simplicity
             from customer_support_env.server.environment import CustomerSupportEnvironment
