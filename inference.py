@@ -6,8 +6,8 @@ Runs an LLM agent against the Customer Support environment for all 3 tasks.
 MANDATORY ENV VARS:
     API_BASE_URL   The API endpoint for the LLM.
     MODEL_NAME     The model identifier to use for inference.
-    API_KEY        API key for the LLM proxy (fallback: HF_TOKEN).
-    IMAGE_NAME     Docker image name (if using from_docker_image).
+    HF_TOKEN       Your Hugging Face / API key.
+    LOCAL_IMAGE_NAME  Docker image name (if using from_docker_image).
 
 STDOUT FORMAT:
     [START] task=<task_name> env=<benchmark> model=<model_name>
@@ -32,10 +32,13 @@ from customer_support_env.server.graders import grade_episode
 from customer_support_env.server.tickets import TICKETS
 
 # ---- Configuration ----
-API_KEY = os.getenv("API_KEY") or os.getenv("HF_TOKEN") or ""
-API_BASE_URL = os.environ.get("API_BASE_URL", "https://router.huggingface.co/v1")
-MODEL_NAME = os.environ.get("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
-IMAGE_NAME = os.getenv("IMAGE_NAME", "")
+API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
+MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
+HF_TOKEN = os.getenv("HF_TOKEN")
+LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
+
+# Accept API_KEY from validator proxy, fall back to HF_TOKEN
+API_KEY = os.getenv("API_KEY") or HF_TOKEN or ""
 BENCHMARK = "customer_support_env"
 
 MAX_TOKENS = 400
@@ -242,8 +245,8 @@ async def run_task(
 
     try:
         # Connect to environment
-        if IMAGE_NAME:
-            env = await CustomerSupportEnv.from_docker_image(IMAGE_NAME)
+        if LOCAL_IMAGE_NAME:
+            env = await CustomerSupportEnv.from_docker_image(LOCAL_IMAGE_NAME)
         else:
             # Run environment in-process for simplicity
             from customer_support_env.server.environment import CustomerSupportEnvironment
