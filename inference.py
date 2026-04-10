@@ -31,14 +31,12 @@ from customer_support_env import CustomerSupportEnv, SupportAction
 from customer_support_env.server.graders import grade_episode
 from customer_support_env.server.tickets import TICKETS
 
-# ---- Configuration (matches validator requirements exactly) ----
+# ---- Configuration ----
 IMAGE_NAME = os.getenv("IMAGE_NAME")
+API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
 
-# Validator injects API_BASE_URL and API_KEY — use them directly
-API_BASE_URL = os.environ.get("API_BASE_URL", "https://router.huggingface.co/v1")
-MODEL_NAME = os.environ.get("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
-API_KEY = os.environ.get("API_KEY", os.environ.get("HF_TOKEN", ""))
-
+API_BASE_URL = os.getenv("API_BASE_URL") or "https://router.huggingface.co/v1"
+MODEL_NAME = os.getenv("MODEL_NAME") or "Qwen/Qwen2.5-72B-Instruct"
 BENCHMARK = "customer_support_env"
 
 MAX_TOKENS = 400
@@ -92,7 +90,6 @@ def log_step(
 ) -> None:
     error_val = error if error else "null"
     done_val = str(done).lower()
-    # Truncate action to avoid overly long lines
     action_short = action.replace("\n", " ")[:200]
     print(
         f"[STEP] step={step} action={action_short} reward={reward:.2f} "
@@ -155,8 +152,6 @@ def parse_action(text: str) -> SupportAction:
     """Parse LLM output into a SupportAction."""
     text = text.strip()
 
-    # Try to extract JSON from the response
-    # Handle cases where the LLM wraps JSON in markdown code blocks
     if "```" in text:
         for block in text.split("```"):
             block = block.strip()
@@ -166,7 +161,6 @@ def parse_action(text: str) -> SupportAction:
                 text = block
                 break
 
-    # Try direct JSON parse
     try:
         data = json.loads(text)
         if isinstance(data, dict) and "action_type" in data and "content" in data:
@@ -177,7 +171,6 @@ def parse_action(text: str) -> SupportAction:
     except json.JSONDecodeError:
         pass
 
-    # Try to find JSON object in the text
     start = text.find("{")
     end = text.rfind("}") + 1
     if start >= 0 and end > start:
@@ -190,11 +183,10 @@ def parse_action(text: str) -> SupportAction:
         except json.JSONDecodeError:
             pass
 
-    # Fallback: treat the entire response as send_response
     return SupportAction(action_type="send_response", content=text)
 
 
-def get_agent_action(
+def get_model_action(
     client: OpenAI,
     obs_data: Dict[str, Any],
     conversation_history: List[Dict[str, str]],
@@ -205,142 +197,101 @@ def get_agent_action(
     messages.extend(conversation_history)
     messages.append({"role": "user", "content": user_prompt})
 
-    try:
-        completion = client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=messages,
-            temperature=TEMPERATURE,
-            max_tokens=MAX_TOKENS,
-            stream=False,
-        )
-        response_text = (completion.choices[0].message.content or "").strip()
-        if not response_text:
-            return SupportAction(action_type="send_response", content="I apologize, I need more information.")
+    completion = client.chat.completions.create(
+        model=MODEL_NAME,
+        messages=messages,
+        temperature=TEMPERATURE,
+        max_tokens=MAX_TOKENS,
+        stream=False,
+    )
+    response_text = (completion.choices[0].message.content or "").strip()
+    if not response_text:
+        return SupportAction(action_type="send_response", content="I need more information to help you.")
 
-        action = parse_action(response_text)
+    action = parse_action(response_text)
 
-        # Add to conversation history
-        conversation_history.append({"role": "user", "content": user_prompt})
-        conversation_history.append({"role": "assistant", "content": response_text})
+    conversation_history.append({"role": "user", "content": user_prompt})
+    conversation_history.append({"role": "assistant", "content": response_text})
 
-        return action
-    except Exception as exc:
-        # Do NOT silently swallow — re-raise so the validator sees the failure
-        print(f"[DEBUG] Model request failed: {exc}", flush=True)
-        raise
+    return action
 
 
-# ---- Main loop ----
+def obs_to_dict(obs) -> Dict[str, Any]:
+    """Convert observation to dict for prompt building."""
+    return {
+        "ticket": obs.ticket,
+        "search_results": obs.search_results,
+        "customer_reply": obs.customer_reply,
+        "system_message": obs.system_message,
+        "available_actions": obs.available_actions,
+        "step_number": obs.step_number,
+        "max_steps": obs.max_steps,
+    }
 
-async def run_task(
-    client: OpenAI,
-    task_id: str,
-    ticket_id: str,
-    max_steps: int,
-) -> float:
-    """Run a single task episode and return the score."""
-    env = None
-    rewards: List[float] = []
-    steps_taken = 0
-    score = 0.0
-    success = False
 
-    log_start(task=task_id, env=BENCHMARK, model=MODEL_NAME)
-
-    try:
-        # Connect to environment
-        if IMAGE_NAME:
-            env = await CustomerSupportEnv.from_docker_image(IMAGE_NAME)
-        else:
-            # Run environment in-process for simplicity
-            from customer_support_env.server.environment import CustomerSupportEnvironment
-            from customer_support_env.server.graders import grade_episode as _grade
-
-            local_env = CustomerSupportEnvironment()
-            obs = local_env.reset(task_id=task_id, ticket_id=ticket_id)
-
-            obs_data = {
-                "ticket": obs.ticket,
-                "search_results": obs.search_results,
-                "customer_reply": obs.customer_reply,
-                "system_message": obs.system_message,
-                "available_actions": obs.available_actions,
-                "step_number": obs.step_number,
-                "max_steps": obs.max_steps,
-            }
-
-            conversation_history: List[Dict[str, str]] = []
-
-            for step_num in range(1, max_steps + 1):
-                if obs.done:
-                    break
-
-                action = get_agent_action(client, obs_data, conversation_history)
-
-                obs = local_env.step(action)
-                reward = obs.reward or 0.0
-                done = obs.done
-                error = None
-
-                rewards.append(reward)
-                steps_taken = step_num
-
-                action_str = f"{action.action_type}:{action.content[:100]}"
-                log_step(
-                    step=step_num,
-                    action=action_str,
-                    reward=reward,
-                    done=done,
-                    error=error,
-                )
-
-                obs_data = {
-                    "ticket": obs.ticket,
-                    "search_results": obs.search_results,
-                    "customer_reply": obs.customer_reply,
-                    "system_message": obs.system_message,
-                    "available_actions": obs.available_actions,
-                    "step_number": obs.step_number,
-                    "max_steps": obs.max_steps,
-                }
-
-                if done:
-                    break
-
-            # Compute final score using grader
-            ticket_config = TICKETS[ticket_id]
-            score = _grade(local_env.state, ticket_config)
-            score = min(max(score, 0.0), 1.0)
-            success = score >= 0.1
-
-    except Exception as e:
-        print(f"[DEBUG] Task {task_id} error: {e}", flush=True)
-    finally:
-        if env:
-            try:
-                await env.close()
-            except Exception:
-                pass
-        log_end(success=success, steps=steps_taken, score=score, rewards=rewards)
-
-    return score
-
+# ---- Main loop (follows sample inference.py pattern) ----
 
 async def main() -> None:
     client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
 
-    total_score = 0.0
-    for task_cfg in TASKS:
-        score = await run_task(
-            client=client,
-            task_id=task_cfg["task_id"],
-            ticket_id=task_cfg["ticket_id"],
-            max_steps=task_cfg["max_steps"],
-        )
-        total_score += score
+    env = await CustomerSupportEnv.from_docker_image(IMAGE_NAME)
 
-    avg_score = total_score / len(TASKS)
-    print(f"[DEBUG] Average score across {len(TASKS)} tasks: {avg_score:.3f}", flush=True)
+    for task_cfg in TASKS:
+        task_id = task_cfg["task_id"]
+        ticket_id = task_cfg["ticket_id"]
+        max_steps = task_cfg["max_steps"]
+
+        rewards: List[float] = []
+        steps_taken = 0
+        score = 0.0
+        success = False
+
+        log_start(task=task_id, env=BENCHMARK, model=MODEL_NAME)
+
+        try:
+            result = await env.reset(task_id=task_id, ticket_id=ticket_id)
+            obs_data = obs_to_dict(result.observation)
+
+            conversation_history: List[Dict[str, str]] = []
+
+            for step in range(1, max_steps + 1):
+                if result.done:
+                    break
+
+                action = get_model_action(client, obs_data, conversation_history)
+
+                result = await env.step(action)
+                obs = result.observation
+
+                reward = result.reward or 0.0
+                done = result.done
+                error = None
+
+                rewards.append(reward)
+                steps_taken = step
+
+                action_str = f"{action.action_type}:{action.content[:100]}"
+                log_step(step=step, action=action_str, reward=reward, done=done, error=error)
+
+                obs_data = obs_to_dict(obs)
+
+                if done:
+                    break
+
+            # Compute score from cumulative rewards
+            total_reward = sum(rewards)
+            tc = TICKETS[ticket_id]
+            max_achievable = tc.get("max_achievable_reward", 1.0)
+            score = min(max(total_reward / max_achievable, 0.0), 1.0)
+            success = score >= 0.1
+
+        finally:
+            log_end(success=success, steps=steps_taken, score=score, rewards=rewards)
+
+    try:
+        await env.close()
+    except Exception as e:
+        print(f"[DEBUG] env.close() error: {e}", flush=True)
 
 
 if __name__ == "__main__":
