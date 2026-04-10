@@ -42,6 +42,12 @@ BENCHMARK = "customer_support_env"
 MAX_TOKENS = 400
 TEMPERATURE = 0.3
 
+# Debug: log which credentials are being used
+print(f"[DEBUG] API_BASE_URL={API_BASE_URL}", flush=True)
+print(f"[DEBUG] MODEL_NAME={MODEL_NAME}", flush=True)
+print(f"[DEBUG] API_KEY={'set (' + API_KEY[:8] + '...)' if API_KEY else 'NOT SET'}", flush=True)
+print(f"[DEBUG] IMAGE_NAME={IMAGE_NAME}", flush=True)
+
 # One representative ticket per task
 TASKS = [
     {"task_id": "faq_resolution", "ticket_id": "T1-01", "max_steps": 8},
